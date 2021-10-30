@@ -1,0 +1,66 @@
+version: "3"
+
+services:
+  server:
+    build: ./timeTableBot/
+    container_name: server-timeTableBot
+    working_dir: /var/www/timeTableBot
+    
+    ports:
+      - "$SERVER_PORT:$SERVER_PORT"
+    volumes:
+      - ./timeTableBot/:/var/www/timeTableBot/
+    command: python manage.py runserver 0.0.0.0:$SERVER_PORT
+    environment:
+      - PGHOST=$DATABASE_HOST
+    env_file:
+      - .env
+    depends_on:
+      - database
+
+  bot:
+    build: ./timeTableBot/
+    container_name: dtb_bot
+    working_dir: /var/www/timeTableBot
+    command: python run_pooling.py
+    volumes:
+      - ./timeTableBot/:/var/www/timeTableBot/
+    env_file:
+      - .env
+    depends_on:
+      - server
+
+  database:
+    container_name: database-timeTableBot
+    image: postgres:latest
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "$DATABASE_PORT:$DATABASE_PORT"
+    volumes:
+      - ./initial.sql:/docker-entrypoint-initdb.d/initial.sql
+  
+
+  redis:
+    image: redis:latest
+    container_name: redis-timeTableBot
+    ports:
+      - "$REDIS_PORT:$REDIS_PORT"
+
+  celery:
+    build:
+      context: ./timeTableBot/
+      dockerfile: Dockerfile
+    container_name: celery-timeTableBot
+    working_dir: /var/www/timeTableBot
+    volumes:
+      - ./timeTableBot/:/var/www/timeTableBot
+    command: /bin/bash -c "celery -A server worker --pool=prefork --concurrency=2 -B --loglevel=info --without-gossip --without-mingle -E"
+    depends_on:
+      - database
+      - redis
+    env_file:
+      - .env
+    environment:
+      - DJANGO_SETTINGS_MODULE=$DJANGO_SETTINGS_MODULE
+      - PGHOST=$DATABASE_HOST
